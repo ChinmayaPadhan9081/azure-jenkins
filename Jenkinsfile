@@ -17,13 +17,19 @@ pipeline {
 
     agent any
 
+    // options {
+    //     timestamps()
+    //     disableConcurrentBuilds()
+    //     timeout(time: 90, unit: 'MINUTES')
+    //     buildDiscarder(logRotator(numToKeepStr: '30'))
+    //     ansiColor('xterm')
+    // }
+
     options {
-        timestamps()
-        disableConcurrentBuilds()
-        timeout(time: 90, unit: 'MINUTES')
-        buildDiscarder(logRotator(numToKeepStr: '30'))
-        ansiColor('xterm')
-    }
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 120, unit: 'MINUTES')
+}
 
     parameters {
         choice(
