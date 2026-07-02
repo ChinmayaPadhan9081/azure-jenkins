@@ -135,7 +135,7 @@ pipeline {
                                 error("Invalid TRIVY_MODE '${params.TRIVY_MODE}'. Allowed: ${allowedTrivyModes}")
                             }
                             // Requirement 10: Docker must be checked before running Trivy standalone.
-                            sh "bash '${SCRIPTS_DIR}/check-docker.sh'"
+                            sh "bash '${env.SCRIPT_DIR}/check-docker.sh'"
                         }
                         // Kubernetes mode needs no docker/cluster inputs beyond BASE_URL,
                         // per the fixed payload contract in this pipeline.
@@ -151,12 +151,22 @@ pipeline {
                                 error("Invalid ZAP_MODE '${params.ZAP_MODE}'. Allowed: ${allowedZapModes}")
                             }
                             // Requirement 10: Docker must be checked before running ZAP standalone.
-                            sh "bash '${SCRIPTS_DIR}/check-docker.sh'"
+                            sh "bash '${env.SCRIPT_DIR}/check-docker.sh'"
                         }
                     }
 
+                    echo "========== Cavisson Security Pipeline (Jenkins) =========="
+                    echo "Scan Type : ${params.SCAN_TYPE}"
+                    echo "Base URL  : ${params.BASE_URL}"
+                    echo "============================================================"
+
+                    
                     // Make scripts executable regardless of how they arrived in the repo.
-                    sh "chmod +x '${SCRIPTS_DIR}'/*.sh"
+                    sh "chmod +x '${env.SCRIPT_DIR}'/*.sh"
+
+                    if (!params.BASE_URL?.trim()) {
+                        error("BASE_URL is required for all scan types (static token exchange + Kubernetes REST orchestration).")
+                    }
                 }
             }
         }
@@ -176,9 +186,14 @@ pipeline {
                 withCredentials([string(credentialsId: 'cavisson-api-token', variable: 'CAV_TOKEN')]) {
                     script {
                         // Step A: exchange the Cavisson API token for Sonar admin/user tokens.
-                        sh """
-                            bash '${SCRIPTS_DIR}/get-cav-tokens.sh' '${params.BASE_URL}' '${CAV_TOKEN}' '${WORKSPACE}/cav-tokens.env'
-                        """
+                        // sh """
+                        //     bash '${env.SCRIPT_DIR}/get-cav-tokens.sh' '${params.BASE_URL}' '${CAV_TOKEN}' '${WORKSPACE}/cav-tokens.env'
+                        // """
+                        sh '''
+                            set +x
+                            BASE_URL_CLEAN="${BASE_URL%/}"
+                            bash "${SCRIPT_DIR}/get-cav-tokens.sh" "$BASE_URL_CLEAN" "$CAV_TOKEN" "$WORKSPACE/cav-tokens.env"
+                        '''
 
                         def tokens = readProperties(file: "${WORKSPACE}/cav-tokens.env")
 
@@ -189,15 +204,18 @@ pipeline {
                         ]) {
                             // Step B: run the same cav_scanner.sh used by the Azure task.
                             sh '''
+                                set +x
                                 set -e
-                                HOST_URL="${BASE_URL}/cav-analysis/userName/${CAV_USER_NAME}/cavToken/${CAV_TOKEN}"
+                                
+                                BASE_URL_CLEAN="${BASE_URL%/}"
+                                HOST_URL="${BASE_URL_CLEAN}/cav-analysis/userName/${CAV_USER_NAME}/cavToken/${CAV_TOKEN}"
 
                                 SOLUTION_ARGS=""
                                 if [ -n "${TARGET_PATH}" ]; then
                                     SOLUTION_ARGS="--solution ${TARGET_PATH}"
                                 fi
 
-                                bash "${SCRIPTS_DIR}/cav_scanner.sh" \\
+                                bash "${SCRIPT_DIR}/cav_scanner.sh" \\
                                     --hostUrl "$HOST_URL" \\
                                     --sonarToken "$CAV_SONAR_TOKEN" \\
                                     --projectKey "$PROJECT_KEY" \\
@@ -229,7 +247,7 @@ pipeline {
                         echo "Container Run Mode is standalone. Running Trivy shell scan only."
                         sh """
                             mkdir -p '${TRIVY_RAW_REPORT_DIR}'
-                            bash '${SCRIPTS_DIR}/trivy-standalone-wrapper.sh' \\
+                            bash '${env.SCRIPT_DIR}/trivy-standalone-wrapper.sh' \\
                                 --mode '${params.TRIVY_MODE}' \\
                                 --target '${params.TRIVY_TARGET}' \\
                                 --report-dir '${TRIVY_RAW_REPORT_DIR}'
@@ -238,10 +256,13 @@ pipeline {
                     } else {
                         echo "Container Run Mode is kubernetes. Calling Trivy REST API only."
                         withCredentials([string(credentialsId: 'cavisson-api-token', variable: 'CAV_TOKEN')]) {
-                            sh """
-                                bash '${SCRIPTS_DIR}/call-security-scan-api.sh' \\
-                                    '${params.BASE_URL}' '${CAV_TOKEN}' false true 'Trivy Container Scan'
-                            """
+                            withEnv(["BASE_URL_PARAM=${params.BASE_URL}"]) {
+                                sh '''
+                                    set +x
+                                    BASE_URL_CLEAN="${BASE_URL_PARAM%/}"
+                                    bash "${SCRIPT_DIR}/call-security-scan-api.sh" "$BASE_URL_CLEAN" "$CAV_TOKEN" false true "Trivy Container Scan"
+                                '''
+                            }
                         }
                     }
                 }
@@ -269,7 +290,7 @@ pipeline {
 
                         def zapExit = sh(
                             script: """
-                                bash '${SCRIPTS_DIR}/zap-standalone-wrapper.sh' \\
+                                bash '${env.SCRIPT_DIR}/zap-standalone-wrapper.sh' \\
                                     --mode '${params.ZAP_MODE}' \\
                                     --target '${params.ZAP_TARGET}' \\
                                     --report-dir '${ZAP_RAW_REPORT_DIR}'
@@ -288,10 +309,13 @@ pipeline {
                     } else {
                         echo "Dynamic Run Mode is kubernetes. Calling ZAP REST API only."
                         withCredentials([string(credentialsId: 'cavisson-api-token', variable: 'CAV_TOKEN')]) {
-                            sh """
-                                bash '${SCRIPTS_DIR}/call-security-scan-api.sh' \\
-                                    '${params.BASE_URL}' '${CAV_TOKEN}' true false 'ZAP Dynamic Scan'
-                            """
+                            withEnv(["BASE_URL_PARAM=${params.BASE_URL}"]) {
+                                sh '''
+                                    set +x
+                                    BASE_URL_CLEAN="${BASE_URL_PARAM%/}"
+                                    bash "${SCRIPT_DIR}/call-security-scan-api.sh" "$BASE_URL_CLEAN" "$CAV_TOKEN" true false "ZAP Dynamic Scan"
+                                '''
+                            }
                         }
                     }
                 }
