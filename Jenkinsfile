@@ -87,7 +87,8 @@ pipeline {
     environment {
         // Equivalent of Azure "$(System.DefaultWorkingDirectory)"
         WORKDIR              = "${WORKSPACE}"
-        SCRIPTS_DIR           = "${WORKSPACE}/scripts"
+        // SCRIPTS_DIR           = "${WORKSPACE}/scripts"
+        SCRIPT_DIR = "${WORKSPACE}"
 
         // Raw, tool-native output locations (mirrors Azure task defaults:
         // trivy-reports / zap-reports directly under the working directory)
