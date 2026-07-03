@@ -70,10 +70,27 @@ pipeline {
             defaultValue: '',
             description: 'Optional sub-path to scan for static scan. Empty = full workspace.'
         )
+        // string(
+        //     name: 'BASE_URL',
+        //     defaultValue: '',
+        //     description: 'Cavisson/Sonar base URL. Required for static and Kubernetes REST orchestration.'
+        // )
         string(
             name: 'BASE_URL',
             defaultValue: '',
             description: 'Cavisson/Sonar base URL. Required for static and Kubernetes REST orchestration.'
+        )
+        
+        string(
+            name: 'APP_REPO_URL',
+            defaultValue: '',
+            description: 'Target application Git repo URL to scan. Example: https://github.com/ChinmayaPadhan9081/microservices-demo.git'
+        )
+        
+        string(
+            name: 'APP_BRANCH',
+            defaultValue: 'main',
+            description: 'Target application Git branch to scan.'
         )
     }
 
@@ -151,22 +168,86 @@ pipeline {
             }
         }
 
+        //target repo cloned to target-src
+        stage('Checkout Target Source') {
+            when {
+                expression { params.APP_REPO_URL?.trim() }
+            }
+            steps {
+                script {
+                    echo '========== Checkout Target Source =========='
+                    echo "Target Repo   : ${params.APP_REPO_URL}"
+                    echo "Target Branch : ${params.APP_BRANCH ?: 'main'}"
+                    echo 'Checkout Dir  : target-src'
+                    echo '============================================'
+        
+                    dir('target-src') {
+                        deleteDir()
+                        git branch: params.APP_BRANCH ?: 'main',
+                            url: params.APP_REPO_URL.trim()
+                    }
+        
+                    sh '''
+                        echo "Target source checkout completed."
+                        echo "Current workspace:"
+                        pwd
+                        echo "Files inside target-src:"
+                        ls -la target-src | head -50
+                    '''
+                }
+            }
+        }
+        
+        // stage('Static Scan') {
+        //     when { expression { params.SCAN_TYPE == 'static' } }
+        //     steps {
+        //         script {
+        //             def cleanBaseUrl = params.BASE_URL.trim().replaceAll('/+$', '')
+
+        //             echo 'Running static scan through installed Cavisson Jenkins HPI plugin.'
+        //             echo "Cavisson URL: ${cleanBaseUrl}"
+        //             echo "Project Key : ${params.PROJECT_KEY}"
+        //             echo "Target Path : ${params.TARGET_PATH ?: '(full workspace)'}"
+
+        //             cavissonScan(
+        //                 cavissonUrl: cleanBaseUrl,
+        //                 cavissonCredentialId: 'cavisson-api-token',
+        //                 projectKey: params.PROJECT_KEY.trim(),
+        //                 targetPath: params.TARGET_PATH ?: ''
+        //             )
+        //         }
+        //     }
+        // }
+
         stage('Static Scan') {
             when { expression { params.SCAN_TYPE == 'static' } }
             steps {
                 script {
                     def cleanBaseUrl = params.BASE_URL.trim().replaceAll('/+$', '')
-
+        
+                    /*
+                     * Scan path logic:
+                     * 1. If TARGET_PATH is provided, scan that path.
+                     * 2. If APP_REPO_URL is provided and TARGET_PATH is empty, scan target-src.
+                     * 3. If APP_REPO_URL is empty and TARGET_PATH is empty, scan current workspace.
+                     */
+                    def scanPath = params.TARGET_PATH?.trim()
+                    if (!scanPath) {
+                        scanPath = params.APP_REPO_URL?.trim() ? 'target-src' : ''
+                    }
+        
                     echo 'Running static scan through installed Cavisson Jenkins HPI plugin.'
                     echo "Cavisson URL: ${cleanBaseUrl}"
                     echo "Project Key : ${params.PROJECT_KEY}"
-                    echo "Target Path : ${params.TARGET_PATH ?: '(full workspace)'}"
-
+                    echo "App Repo    : ${params.APP_REPO_URL ?: '(not provided)'}"
+                    echo "App Branch  : ${params.APP_BRANCH ?: 'main'}"
+                    echo "Scan Path   : ${scanPath ?: '(full workspace)'}"
+        
                     cavissonScan(
                         cavissonUrl: cleanBaseUrl,
                         cavissonCredentialId: 'cavisson-api-token',
                         projectKey: params.PROJECT_KEY.trim(),
-                        targetPath: params.TARGET_PATH ?: ''
+                        targetPath: scanPath
                     )
                 }
             }
